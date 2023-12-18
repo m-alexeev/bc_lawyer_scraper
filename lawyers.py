@@ -1,9 +1,8 @@
 import argparse
-from re import search
 import requests
 from requests import Session
 from bs4 import BeautifulSoup
-from lawyer import Lawyer 
+from models import Lawyer 
 import pandas as pd
 
 
