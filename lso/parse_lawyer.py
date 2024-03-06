@@ -1,19 +1,42 @@
 from typing import List
+from pandas.core.generic import json
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import re
-import string
-    
+from concurrent.futures import ThreadPoolExecutor   
+from os import listdir
+from os.path import isfile, join 
 
-#https://lso.ca/public-resources/finding-a-lawyer-or-paralegal/directory-search/member?MemberNumber=P15497
+# Number of threads to use for parallel execution
+num_threads = 16 
+
 member_url = 'https://lso.ca/public-resources/finding-a-lawyer-or-paralegal/directory-search/member'
 
+def get_proccessed_files() -> List[str]:
+    path = './lso/output/'
+    files = [f.split(".")[0] for f in listdir(path) if isfile(join(path, f))]
+    return files
+
 def read_numbers() -> List[str]:
+    """
+        Reads input file of all the available lawyer numbers
+        
+        Returns 
+            :return: List of strings containing lawyer numbers
+    """
     with open('./lso/lawyer_numbers.txt', mode='r', encoding='utf-8') as f:
         return f.read().splitlines()
 
 def fetch_lawyer(number: str):
+    """
+        Fetches the html content for each lawyer
+
+        Args:
+            :number: string - Lawyer number
+
+        Returns:
+            :return: html page with laywer details
+    """    
     # have to spoof User-Agent since python-requests get blocked
     headers = {
         'User-Agent': 'PostmanRuntime/7.36.3',
@@ -24,22 +47,17 @@ def fetch_lawyer(number: str):
 
     return response.text
 
-def clean_string(text):
-    """Replaces newline and carriage return characters in the middle of the string with commas,
-    and removes them from the beginning and end of the string.
 
-    Args:
-      text: The string to be processed.
-
-    Returns:
-      The processed string.
+def parse_lawyer(number: str):
     """
-    l_stripped = text.lstrip()  # Remove newline and carriage return characters from the beginning and end
-    r_stripped = l_stripped.rstrip()    
-    print(r_stripped)
-    return r_stripped
+        Parses html page for lawyers and extracts available data 
 
-def parse_lawyer(number: str): #-> pd.DataFrame
+        Args:
+            :number: string - Lawyer number
+
+        Returns:
+            :return: dict containing extracted laywer info
+    """
     print(number)
     lawyer_page = fetch_lawyer(number)
     soup = BeautifulSoup(lawyer_page, "html.parser")
@@ -60,15 +78,28 @@ def parse_lawyer(number: str): #-> pd.DataFrame
         member_dict[label] =value 
 
     # print(member_dict)
-    return member_dict
+    with open(f"./lso/output/{number}.json", "w") as f:
+        json.dump(member_dict, f)
+    # return member_dict
+    
 
 
 if __name__ == "__main__":
-    lawyer_numbers = read_numbers()
-   
-    lawyer_data_list = [parse_lawyer(i) for i in lawyer_numbers[0:100]]
-    lawyer_data_df = pd.DataFrame(lawyer_data_list)
+    lawyer_numbers = set(read_numbers())
+    # run the parsing concurrently    
+    processed_files = set(get_proccessed_files())
+    # print (len(get_proccessed_files()))
+    lawyers_to_process = lawyer_numbers - processed_files
+    print(len(lawyer_numbers))
+    print(len(lawyers_to_process))
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        # Submit tasks for parallel execution
+        futures = [executor.submit(parse_lawyer, i) for i in lawyers_to_process]
 
-    lawyer_data_df.to_csv(f"lawyer_sample.csv", header=True)
-    # df.to_csv(f"{output_file}", header=True, index=False)
-    # lawyer_data_df
+        # # Wait for all tasks to complete and get results
+        # lawyer_data_list = [future.result() for future in futures]
+        # 
+        # lawyer_data_df = pd.DataFrame(lawyer_data_list)
+        #
+        #
+        # lawyer_data_df.to_csv(f"lawyer_sample.csv", header=True)
